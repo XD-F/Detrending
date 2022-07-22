@@ -1,127 +1,68 @@
+%{ 
+ Copyright (C) 2022 Feng
 
-pkg load instrument-control
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+ -*- texinfo -*-
+ @deftypefn {} {@var{retval} =} SerialRead (@var{input1}, @var{input2})
+
+ @seealso{}
+ @end deftypefn
+
+ Author: Feng <Feng@2308-FENG>
+ Created: 2022-07-22
+%}
+
+
 pkg load nan
-##pkg load signal
+pkg load signal
 pkg load optim
+%%pkg load instrument-control % Uncomment these two lines if a set of hardware is used for data collection
+%%data = SerialRead()
+           
+%%  Data of Simulation
+timestamp = 0:0.01:100
+acc_vertical = sin(timestamp)
 
+           
+%%  Filtering                                                                          
 
-                                                                                %%%%
-%%%%%%%%%%%                                                                     %%  Initialize Serial Port
-                                                                                %%%%
-
-if(exist("serial") != 3)
-  disp("No Serial Support");
-endif
-
-s1 = serial("/dev/tty.usbmodem14201")
-pause(1);
-
-set(s1, 'baudrate', 115200);
-set(s1, 'bytesize', 8);
-set(s1, 'parity', 'n');
-set(s1, 'stopbits', 1);
-set(s1, 'timeout', 50);
-
-% set(s1, 'requesttosend', 'on');
-% set(s1, 'dataterminalready', 'off');
-
-srl_flush(s1);
-
-                                                                                %%%%
-%%%%%%%%%%%                                                                     %%  Read Data 
-                                                                                %%%%
-g = 9.8;
-spN = 200;                                                                     % sampling number
-spP = 0.05;                                                                      % sampling period
-
-accX = zeros(spN, 1); accY = zeros(spN, 1); accZ = zeros(spN, 1);
-magX = zeros(spN, 1); magY = zeros(spN, 1); magZ = zeros(spN, 1);
-gyroX = zeros(spN, 1); gyroY = zeros(spN, 1); gyroZ = zeros(spN, 1);
-
-roll = zeros(spN, 1); pitch = zeros(spN, 1);  yaw = zeros(spN, 1);
-velocity = zeros(spN, 1); displacement = zeros(spN, 1);
-timestamp = zeros(spN, 1);
-acc_vertical = zeros(spN, 1);
-
-
-while( !(char(srl_read(s1, 1)) == 1 && char(srl_read(s1, 1)) == 9 && char(srl_read(s1, 1)) == 6) )
+acc_vertical = acc_vertical - mean(acc_vertical); 
+ 
+lp = fir1(40, 0.2);
+hp = fir1(40, 0.02, 'high');
+wndw = 10;
+acc_vertical_lp = filter(lp, 1, acc_vertical);
+acc_vertical_lphp = filter(hp, 1, acc_vertical_lp);
+acc_vertical_lphpma = filter(ones(wndw, 1) / wndw, 1, acc_vertical_lphp);
+for cnt = 2 : spN
+  interval = timestamp(cnt) - timestamp(cnt - 1);
+  velocity(cnt) = velocity(cnt - 1) + (acc_vertical_lphpma(cnt) + acc_vertical_lphpma(cnt - 1))/2 * interval;
+  displacement(cnt) = displacement(cnt - 1) + (velocity(cnt) + velocity(cnt - 1))/2 * interval;
 end
 
-fprintf('Sampling...');
 
-for cnt = 1 : spN
-  data = srl_read(s1, 4);timestamp(cnt) = typecast(uint8(data), 'single') / 1000.0;
-  data = srl_read(s1, 4);accX(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);accY(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);accZ(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);magX(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);magY(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);magZ(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);gyroX(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);gyroY(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);gyroZ(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);roll(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);pitch(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);yaw(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);yaw_dmp(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);pitch_dmp(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);roll_dmp(cnt) = typecast(uint8(data), 'single');
-  
-  
-  data = srl_read(s1, 4);yaw_ma(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);pitch_ma(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);roll_ma(cnt) = typecast(uint8(data), 'single');  
-  
-  data = srl_read(s1, 4);yaw_none(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);pitch_none(cnt) = typecast(uint8(data), 'single');
-  data = srl_read(s1, 4);roll_none(cnt) = typecast(uint8(data), 'single');
-  %data = srl_read(s1, 4);velocity(cnt) = typecast(uint8(data), 'single');
-  %data = srl_read(s1, 4);displacement(cnt) = typecast(uint8(data), 'single');
-  
-  acc_vertical(cnt) = (accZ(cnt) - 1) * g * cos(deg2rad(roll(cnt))) * cos(deg2rad(pitch(cnt))); 
-##  if(cnt > 1)
-##    interval = timestamp(cnt) - timestamp(cnt - 1);
-##    velocity(cnt) = velocity(cnt - 1) + acc_vertical(cnt) * interval;
-##    displacement(cnt) = displacement(cnt -1) + velocity(cnt) * interval;
-##  end
-end
+acc_filter = figure;
+figure(acc_filter);
+plot(timestamp, acc_vertical, 'r');
+hold on;
+plot(timestamp, acc_vertical_lphpma);
 
-fclose(s1);
-clear s1;
-
-fprintf('Sampling Completed...');
-fprintf('Data processing...');
-
+title('highpass-lowpass-moving average');
+xlabel('time/s');
+ylabel('acceleration');    
                                                                                 %%%%
-%%%%%%%%%%%                                                                     %%  Filtering
-
-                                                                                %%%%
-##
-##acc_vertical = acc_vertical - mean(acc_vertical); 
-## 
-##lp = fir1(40, 0.2);
-##hp = fir1(40, 0.02, 'high');
-##wndw = 10;
-##acc_vertical_lp = filter(lp, 1, acc_vertical);
-##acc_vertical_lphp = filter(hp, 1, acc_vertical_lp);
-##acc_vertical_lphpma = filter(ones(wndw, 1) / wndw, 1, acc_vertical_lphp);
-##for cnt = 2 : spN
-##  interval = timestamp(cnt) - timestamp(cnt - 1);
-##  velocity(cnt) = velocity(cnt - 1) + (acc_vertical_lphpma(cnt) + acc_vertical_lphpma(cnt - 1))/2 * interval;
-##  displacement(cnt) = displacement(cnt - 1) + (velocity(cnt) + velocity(cnt - 1))/2 * interval;
-##end
-##
-##
-##acc_filter = figure;
-##figure(acc_filter);
-##plot(timestamp, acc_vertical, 'r');
-##hold on;
-##plot(timestamp, acc_vertical_lphpma);
-##
-##title('highpass-lowpass-moving average');
-##xlabel('time/s');
-##ylabel('acceleration');    
-##                                                                                %%%%
 ##%%%%%%%%%%%                                                                     %%  Plot
 ##                                                                                %%%%
 ##
